@@ -1,0 +1,117 @@
+#Temporal Trend Analyses, led by K.D. Hyrenbach
+#March 2026
+
+library(readr)
+library(ggplot2)
+plastic.trend <- read_csv("R/working/AlbatrossPlasticsTrend.csv", 
+col_types = cols(species = col_factor(levels = c("LAAL", "BFAL"))))
+View(plastic.trend)
+
+# 1) Linear regression of BFAL_FO and LAAL_FO as a function of year
+
+by(plastic.trend$FO, plastic.trend$species, shapiro.test)
+# Test the BFAL_FO data for normality
+# normally distributed (W = 0.95767, p-value = 0.7737)
+# Test the LAAL_FO data for normality
+# normally distributed (W = 0.88231, p-value = 0.166)
+
+
+# Perform linear regression using aov (analysis of variance) command
+# Ancova model includes two predictors (species and year)
+# and tests for the species*year interaction
+
+
+trend.model <- aov (plastic.trend$FO ~ plastic.trend$species * plastic.trend$year)
+
+# extract MS terms and p values
+summary(trend.model)
+# extract R-squared values
+summary.lm(trend.model)
+
+#Extract residuals to test aov assumptions
+
+# i)  normality of residuals
+shapiro.test(trend.model$residuals)
+# normally distributed (W = 0.98319, p-value = 0.9769)
+
+#ii) autocorrelation of residuals with Durbin-Watson (DW) test
+library(lmtest)
+dwtest(trend.model)
+# assumption of residual autocorrelation met: DW = 2.287, p-value = 0.4288
+# use ACF Plot to visualize residual autocorrelation
+acf(trend.model$residuals)
+
+
+#iii) testing homoskedasticity with # studentized Breusch-Pagan (BP) test
+library(lmtest)
+bptest(trend.model)
+# assumption of equality of variances met: 
+# studentized Breusch-Pagan test: BP = 3.4403, df = 3, p-value = 0.3286
+
+
+# iv) check leverage of data points with Cooks distance
+leverage = cooks.distance(trend.model)
+# use boxplot to visualize leverage
+boxplot(leverage) # note: all values < 1
+
+# Create the regression plot with ggplot2
+# Formula: FO(DV) ~ species (IV) * year (IV)
+# species and year are the two interacting independent variables (IVs)
+
+FO_reg_plot <- ggplot(plastic.trend, aes(x = year, y = FO, color = factor(species))) +
+  scale_color_manual(values = c("BFAL" = "black", "LAAL" = "gray70")) +
+  theme_classic() + xlab("Year") + ylab("Plastic Frequency of Occurrence (FO)")+
+  geom_smooth(method = "lm", se = TRUE, fill = "lightgray", alpha = 0.25) +
+  geom_point(shape = 16, size = 4)   +
+  scale_y_continuous(breaks = c(30, 40, 50, 60, 70, 80, 90)) +
+  coord_cartesian(ylim = c(28, 92)) +
+  labs(color = "Species")
+
+FO_reg_plot
+
+# Save the plot
+ggsave(
+  filename = "Beck_Fig3.jpg", # File name determines the format (PDF, PNG, SVG, etc.)
+  plot = FO_reg_plot,                   # The plot object to save (defaults to last plot if omitted)
+  width = 8,                        # Width of the plot
+  height = 5,                       # Height of the plot
+  units = "in",                     # Units for width/height: "in", "cm", "mm", or "px"
+  dpi = 600                         # Resolution (dots per inch), 300+ fohttp://127.0.0.1:43591/graphics/de487e66-05b8-4602-8c33-d165971d8c3b.pngr publication quality
+)
+
+ggsave(
+  filename = "Beck_Fig3.tif", # File name determines the format (PDF, PNG, SVG, etc.)
+  plot = FO_reg_plot,                   # The plot object to save (defaults to last plot if omitted)
+  width = 8,                        # Width of the plot
+  height = 5,                       # Height of the plot
+  units = "in",                     # Units for width/height: "in", "cm", "mm", or "px"
+  dpi = 600                         # Resolution (dots per inch), 300+ for publication quality
+)
+
+# 2) Because there was a significant year * species interaction
+# Follow up with paired t test of FO by species to account for the influence of year
+
+# Calculate difference in species-specific plastic FO
+# sp.diff.FO = LAAL.FO - BFAL.FO
+# Test this difference for normality, before performing paired t test
+
+# Example: Select only rows where 'group_variable' is equal to species
+LAAL.data <- subset(plastic.trend, species == "LAAL")
+BFAL.data <- subset(plastic.trend, species == "BFAL")
+sp.diff.FO = LAAL.data$FO - BFAL.data$FO
+
+boxplot(sp.diff.FO)
+shapiro.test(sp.diff.FO)  
+#normally distributed: W = 0.9309, p-value = 0.49
+
+# Create a boxplot of the FO values, paired by year
+library(ggplot2)
+library(ggpubr)
+
+# Perform paired t test
+stat.test <- plastic.trend %>% 
+  t_test(FO ~ species, paired = TRUE) %>%
+  add_significance()
+stat.test
+# significant result: t = -4.56, df = 8, p = 0.00184
+
